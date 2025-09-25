@@ -318,6 +318,10 @@ def add_word_page():
 def practice_page():
     return render_template('practice.html')
 
+@app.route('/manage-words')
+def manage_words_page():
+    return render_template('manage_words.html')
+
 @app.route('/api/status')
 def api_status():
     """Check API configuration status"""
@@ -326,6 +330,213 @@ def api_status():
         'azure_translator': bool(TRANSLATOR_KEY and TRANSLATOR_ENDPOINT)
     }
     return jsonify(status)
+
+@app.route('/api/words', methods=['GET'])
+def get_words():
+    """Get all words with pagination and search"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    search = request.args.get('search', '')
+    
+    conn = sqlite3.connect('kakitori.db')
+    cursor = conn.cursor()
+    
+    # Build search query
+    where_clause = ""
+    params = []
+    
+    if search:
+        where_clause = "WHERE word LIKE ? OR meaning LIKE ? OR kanji LIKE ?"
+        search_term = f"%{search}%"
+        params = [search_term, search_term, search_term]
+    
+    # Get total count
+    count_query = f"SELECT COUNT(*) FROM hiragana {where_clause}"
+    cursor.execute(count_query, params)
+    total_count = cursor.fetchone()[0]
+    
+    # Get paginated results
+    offset = (page - 1) * per_page
+    query = f"""
+        SELECT id, word, kanji, level, meaning, 
+               CASE WHEN audio1 IS NOT NULL THEN 1 ELSE 0 END as has_audio1,
+               CASE WHEN audio2 IS NOT NULL THEN 1 ELSE 0 END as has_audio2,
+               CASE WHEN audio3 IS NOT NULL THEN 1 ELSE 0 END as has_audio3
+        FROM hiragana 
+        {where_clause}
+        ORDER BY id DESC 
+        LIMIT ? OFFSET ?
+    """
+    
+    cursor.execute(query, params + [per_page, offset])
+    words = cursor.fetchall()
+    conn.close()
+    
+    # Format results
+    words_list = []
+    for word in words:
+        words_list.append({
+            'id': word[0],
+            'word': word[1],
+            'kanji': word[2],
+            'level': word[3],
+            'meaning': word[4],
+            'has_audio1': bool(word[5]),
+            'has_audio2': bool(word[6]),
+            'has_audio3': bool(word[7])
+        })
+    
+    return jsonify({
+        'words': words_list,
+        'total': total_count,
+        'page': page,
+        'per_page': per_page,
+        'pages': (total_count + per_page - 1) // per_page
+    })
+
+@app.route('/api/words/<int:word_id>', methods=['GET'])
+def get_word(word_id):
+    """Get specific word details"""
+    conn = sqlite3.connect('kakitori.db')
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT id, word, kanji, level, meaning,
+               CASE WHEN audio1 IS NOT NULL THEN 1 ELSE 0 END as has_audio1,
+               CASE WHEN audio2 IS NOT NULL THEN 1 ELSE 0 END as has_audio2,
+               CASE WHEN audio3 IS NOT NULL THEN 1 ELSE 0 END as has_audio3
+        FROM hiragana WHERE id = ?
+    """, (word_id,))
+    
+    word = cursor.fetchone()
+    conn.close()
+    
+    if not word:
+        return jsonify({'error': 'Word not found'}), 404
+    
+    return jsonify({
+        'id': word[0],
+        'word': word[1],
+        'kanji': word[2],
+        'level': word[3],
+        'meaning': word[4],
+        'has_audio1': bool(word[5]),
+        'has_audio2': bool(word[6]),
+        'has_audio3': bool(word[7])
+    })
+
+@app.route('/api/words/<int:word_id>', methods=['PUT'])
+def update_word(word_id):
+    """Update word details"""
+    data = request.json
+    
+    conn = sqlite3.connect('kakitori.db')
+    cursor = conn.cursor()
+    
+    # Check if word exists
+    cursor.execute("SELECT id FROM hiragana WHERE id = ?", (word_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Word not found'}), 404
+    
+    # Update word
+    cursor.execute("""
+        UPDATE hiragana 
+        SET kanji = ?, level = ?, meaning = ?
+        WHERE id = ?
+    """, (data.get('kanji', ''), data.get('level', ''), data.get('meaning', ''), word_id))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Word updated successfully'})
+
+@app.route('/api/words/<int:word_id>', methods=['DELETE'])
+def delete_word(word_id):
+    """Delete word and its related data"""
+    conn = sqlite3.connect('kakitori.db')
+    cursor = conn.cursor()
+    
+    try:
+        # Check if word exists
+        cursor.execute("SELECT word FROM hiragana WHERE id = ?", (word_id,))
+        word_data = cursor.fetchone()
+        
+        if not word_data:
+            return jsonify({'error': 'Word not found'}), 404
+        
+        word_text = word_data[0]
+        
+        # Delete related session attempts first
+        cursor.execute("DELETE FROM session_attempts WHERE hiragana_id = ?", (word_id,))
+        
+        # Delete from session_words
+        cursor.execute("DELETE FROM session_words WHERE hiragana_id = ?", (word_id,))
+        
+        # Delete the word
+        cursor.execute("DELETE FROM hiragana WHERE id = ?", (word_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': f'Word "{word_text}" deleted successfully'})
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': f'Error deleting word: {str(e)}'}), 500
+
+@app.route('/api/words/<int:word_id>/regenerate-audio', methods=['POST'])
+def regenerate_audio(word_id):
+    """Regenerate audio for a specific word"""
+    if not SPEECH_KEY:
+        return jsonify({
+            'error': 'Azure Speech Key not configured',
+            'details': 'Configure AZURE_SPEECH_KEY in .env file'
+        }), 400
+    
+    data = request.json
+    use_kanji = data.get('use_kanji', False)
+    
+    conn = sqlite3.connect('kakitori.db')
+    cursor = conn.cursor()
+    
+    # Get word details
+    cursor.execute("SELECT word, kanji FROM hiragana WHERE id = ?", (word_id,))
+    word_data = cursor.fetchone()
+    
+    if not word_data:
+        conn.close()
+        return jsonify({'error': 'Word not found'}), 404
+    
+    word_text, kanji_text = word_data
+    text_to_speak = kanji_text if use_kanji and kanji_text else word_text
+    
+    # Generate new audio
+    voices = ["ja-JP-NaokiNeural", "ja-JP-NanamiNeural", "ja-JP-AoiNeural"]
+    
+    audio1 = generate_speech(voices[0], text_to_speak)
+    audio2 = generate_speech(voices[1], text_to_speak)
+    audio3 = generate_speech(voices[2], text_to_speak)
+    
+    if not any([audio1, audio2, audio3]):
+        conn.close()
+        return jsonify({
+            'error': 'Failed to generate audio',
+            'details': 'Check Azure Speech Service credentials'
+        }), 500
+    
+    # Update audio in database
+    cursor.execute("""
+        UPDATE hiragana 
+        SET audio1 = ?, audio2 = ?, audio3 = ?
+        WHERE id = ?
+    """, (audio1, audio2, audio3, word_id))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Audio regenerated successfully'})
 
 @app.route('/api/check-word', methods=['POST'])
 def check_word():

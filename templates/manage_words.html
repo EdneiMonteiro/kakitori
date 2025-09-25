@@ -1,0 +1,494 @@
+{% extends "base.html" %}
+
+{% block title %}Gerenciar Palavras - Nihongo{% endblock %}
+
+{% block japanese_title %}言葉の管理{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2 style="text-align: center; margin-bottom: 30px; color: #333;">Gerenciar Palavras</h2>
+    
+    <!-- Search and Controls -->
+    <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 200px;">
+            <input type="text" id="searchInput" placeholder="Buscar palavras..." style="width: 100%; padding: 10px; border: 2px solid #e1e1e1; border-radius: 8px;">
+        </div>
+        <button id="searchBtn" class="btn">🔍 Buscar</button>
+        <button id="refreshBtn" class="btn btn-secondary">🔄 Atualizar</button>
+    </div>
+    
+    <!-- Stats -->
+    <div id="stats" style="text-align: center; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+        <strong>Total de palavras: <span id="totalWords">0</span></strong>
+    </div>
+    
+    <!-- Words Table -->
+    <div id="wordsContainer">
+        <div id="loading" class="loading" style="text-align: center; padding: 40px;">
+            <p>Carregando palavras...</p>
+        </div>
+        
+        <div id="wordsTable" style="display: none;">
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                    <thead>
+                        <tr style="background: #667eea; color: white;">
+                            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">ID</th>
+                            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Palavra</th>
+                            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Kanji</th>
+                            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Nível</th>
+                            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Significado</th>
+                            <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Áudios</th>
+                            <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wordsTableBody">
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            <div id="pagination" style="text-align: center; margin-top: 20px;"></div>
+        </div>
+        
+        <div id="noWords" style="display: none; text-align: center; padding: 40px; color: #666;">
+            <p>Nenhuma palavra encontrada.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>Editar Palavra</h3>
+        <div class="form-group">
+            <label for="editWord">Palavra (somente leitura):</label>
+            <input type="text" id="editWord" readonly style="background: #f5f5f5;">
+        </div>
+        <div class="form-group">
+            <label for="editKanji">Kanji:</label>
+            <input type="text" id="editKanji">
+        </div>
+        <div class="form-group">
+            <label for="editLevel">Nível:</label>
+            <select id="editLevel">
+                <option value="N5">N5</option>
+                <option value="N4">N4</option>
+                <option value="N3">N3</option>
+                <option value="N2">N2</option>
+                <option value="N1">N1</option>
+                <option value="N0">N0</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="editMeaning">Significado:</label>
+            <textarea id="editMeaning" rows="3" style="width: 100%; padding: 10px; border: 2px solid #e1e1e1; border-radius: 8px; resize: vertical;"></textarea>
+        </div>
+        <div style="text-align: center; margin-top: 20px;">
+            <button id="saveEditBtn" class="btn btn-success">💾 Salvar</button>
+            <button id="cancelEditBtn" class="btn">❌ Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.audio-indicators {
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+}
+
+.audio-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.audio-indicator.has-audio {
+    background-color: #4CAF50;
+}
+
+.audio-indicator.no-audio {
+    background-color: #f44336;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.action-btn {
+    padding: 5px 10px;
+    font-size: 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn-edit {
+    background: #2196F3;
+    color: white;
+}
+
+.btn-delete {
+    background: #f44336;
+    color: white;
+}
+
+.btn-audio {
+    background: #FF9800;
+    color: white;
+}
+
+.btn-play {
+    background: #4CAF50;
+    color: white;
+}
+
+table th, table td {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    text-align: left;
+    vertical-align: middle;
+}
+
+table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+table tbody tr:hover {
+    background-color: #f0f8ff;
+}
+
+.pagination-btn {
+    padding: 8px 12px;
+    margin: 0 2px;
+    border: 1px solid #ddd;
+    background: white;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.pagination-btn:hover:not(.disabled) {
+    background: #667eea;
+    color: white;
+}
+
+.pagination-btn.active {
+    background: #667eea;
+    color: white;
+}
+
+.pagination-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.badge {
+    background: linear-gradient(45deg, #667eea, #764ba2);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+@media (max-width: 768px) {opacity: 0.5;
+    cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+    table {
+        font-size: 12px;
+    }
+    
+    .action-buttons {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .action-btn {
+        width: 80px;
+        text-align: center;
+    }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+let currentSearch = '';
+let editingWordId = null;
+
+$(document).ready(function() {
+    loadWords();
+    
+    $('#searchBtn').click(function() {
+        currentSearch = $('#searchInput').val().trim();
+        currentPage = 1;
+        loadWords();
+    });
+    
+    $('#searchInput').keypress(function(e) {
+        if (e.which === 13) { // Enter key
+            $('#searchBtn').click();
+        }
+    });
+    
+    $('#refreshBtn').click(function() {
+        currentSearch = '';
+        currentPage = 1;
+        $('#searchInput').val('');
+        loadWords();
+    });
+    
+    // Edit modal handlers
+    $('#cancelEditBtn').click(function() {
+        closeEditModal();
+    });
+    
+    $('#saveEditBtn').click(function() {
+        saveWordEdit();
+    });
+    
+    // Close modal when clicking outside
+    $('#editModal').click(function(e) {
+        if (e.target === this) {
+            closeEditModal();
+        }
+    });
+});
+
+function loadWords(page = 1) {
+    currentPage = page;
+    
+    $('#loading').show();
+    $('#wordsTable').hide();
+    $('#noWords').hide();
+    
+    const params = new URLSearchParams({
+        page: page,
+        per_page: 10,
+        search: currentSearch
+    });
+    
+    $.get(`/api/words?${params}`)
+        .done(function(data) {
+            $('#loading').hide();
+            
+            if (data.words.length === 0) {
+                $('#noWords').show();
+                $('#totalWords').text('0');
+                return;
+            }
+            
+            $('#wordsTable').show();
+            $('#totalWords').text(data.total);
+            
+            renderWordsTable(data.words);
+            renderPagination(data);
+        })
+        .fail(function() {
+            $('#loading').hide();
+            alert('Erro ao carregar palavras');
+        });
+}
+
+function renderWordsTable(words) {
+    const tbody = $('#wordsTableBody');
+    tbody.empty();
+    
+    words.forEach(function(word) {
+        const audioIndicators = `
+            <div class="audio-indicators">
+                <span class="audio-indicator ${word.has_audio1 ? 'has-audio' : 'no-audio'}" title="Áudio 1"></span>
+                <span class="audio-indicator ${word.has_audio2 ? 'has-audio' : 'no-audio'}" title="Áudio 2"></span>
+                <span class="audio-indicator ${word.has_audio3 ? 'has-audio' : 'no-audio'}" title="Áudio 3"></span>
+            </div>
+        `;
+        
+        const actions = `
+            <div class="action-buttons">
+                <button class="action-btn btn-play" onclick="playWordAudio(${word.id})" title="Reproduzir">▶️</button>
+                <button class="action-btn btn-edit" onclick="editWord(${word.id})" title="Editar">✏️</button>
+                <button class="action-btn btn-audio" onclick="regenerateAudio(${word.id})" title="Regenerar Áudio">🔊</button>
+                <button class="action-btn btn-delete" onclick="deleteWord(${word.id}, '${word.word}')" title="Excluir">🗑️</button>
+            </div>
+        `;
+        
+        const row = `
+            <tr>
+                <td>${word.id}</td>
+                <td style="font-size: 1.2em; font-weight: bold;">${word.word}</td>
+                <td style="font-size: 1.1em;">${word.kanji || '-'}</td>
+                <td><span class="badge">${word.level}</span></td>
+                <td style="max-width: 200px; word-wrap: break-word;">${word.meaning}</td>
+                <td>${audioIndicators}</td>
+                <td>${actions}</td>
+            </tr>
+        `;
+        
+        tbody.append(row);
+    });
+}
+
+function renderPagination(data) {
+    const pagination = $('#pagination');
+    pagination.empty();
+    
+    if (data.pages <= 1) return;
+    
+    // Previous button
+    const prevDisabled = data.page === 1 ? 'disabled' : '';
+    pagination.append(`<button class="pagination-btn ${prevDisabled}" onclick="loadWords(${data.page - 1})">‹ Anterior</button>`);
+    
+    // Page numbers
+    for (let i = 1; i <= data.pages; i++) {
+        const active = i === data.page ? 'active' : '';
+        pagination.append(`<button class="pagination-btn ${active}" onclick="loadWords(${i})">${i}</button>`);
+    }
+    
+    // Next button
+    const nextDisabled = data.page === data.pages ? 'disabled' : '';
+    pagination.append(`<button class="pagination-btn ${nextDisabled}" onclick="loadWords(${data.page + 1})">Próximo ›</button>`);
+}
+
+function playWordAudio(wordId) {
+    // Try to play audio 2 first, then 3 if 2 fails
+    const audio2 = new Audio(`/api/audio/${wordId}/2`);
+    audio2.onerror = function() {
+        const audio3 = new Audio(`/api/audio/${wordId}/3`);
+        audio3.play().catch(function() {
+            alert('Não foi possível reproduzir o áudio para esta palavra');
+        });
+    };
+    audio2.play().catch(function() {
+        // Try audio 3 if audio 2 fails
+        const audio3 = new Audio(`/api/audio/${wordId}/3`);
+        audio3.play().catch(function() {
+            alert('Não foi possível reproduzir o áudio para esta palavra');
+        });
+    });
+}
+
+function editWord(wordId) {
+    editingWordId = wordId;
+    
+    $.get(`/api/words/${wordId}`)
+        .done(function(word) {
+            $('#editWord').val(word.word);
+            $('#editKanji').val(word.kanji || '');
+            $('#editLevel').val(word.level);
+            $('#editMeaning').val(word.meaning);
+            $('#editModal').show();
+        })
+        .fail(function() {
+            alert('Erro ao carregar dados da palavra');
+        });
+}
+
+function closeEditModal() {
+    $('#editModal').hide();
+    editingWordId = null;
+}
+
+function saveWordEdit() {
+    if (!editingWordId) return;
+    
+    const data = {
+        kanji: $('#editKanji').val().trim(),
+        level: $('#editLevel').val(),
+        meaning: $('#editMeaning').val().trim()
+    };
+    
+    $.ajax({
+        url: `/api/words/${editingWordId}`,
+        method: 'PUT',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function() {
+            closeEditModal();
+            loadWords(currentPage);
+            alert('Palavra atualizada com sucesso!');
+        },
+        error: function() {
+            alert('Erro ao atualizar palavra');
+        }
+    });
+}
+
+function deleteWord(wordId, wordText) {
+    if (!confirm(`Tem certeza que deseja excluir a palavra "${wordText}"?\n\nEsta ação não pode ser desfeita e removerá todos os dados relacionados (sessões, tentativas, etc.).`)) {
+        return;
+    }
+    
+    $.ajax({
+        url: `/api/words/${wordId}`,
+        method: 'DELETE',
+        success: function(response) {
+            alert(response.message);
+            
+            // Reload current page or go to previous if this was the last item
+            loadWords(currentPage);
+        },
+        error: function(xhr) {
+            const error = xhr.responseJSON ? xhr.responseJSON.error : 'Erro desconhecido';
+            alert(`Erro ao excluir palavra: ${error}`);
+        }
+    });
+}
+
+function regenerateAudio(wordId) {
+    if (!confirm('Deseja regenerar o áudio para esta palavra?')) {
+        return;
+    }
+    
+    const useKanji = confirm('Usar kanji para gerar o áudio?\n\nClique "OK" para usar kanji ou "Cancelar" para usar hiragana/katakana.');
+    
+    $.ajax({
+        url: `/api/words/${wordId}/regenerate-audio`,
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({use_kanji: useKanji}),
+        success: function(response) {
+            alert(response.message);
+            loadWords(currentPage);
+        },
+        error: function(xhr) {
+            const error = xhr.responseJSON ? xhr.responseJSON.error : 'Erro desconhecido';
+            const details = xhr.responseJSON ? xhr.responseJSON.details : '';
+            alert(`Erro ao regenerar áudio: ${error}${details ? '\n\n' + details : ''}`);
+        }
+    });
+}
+</script>
+{% endblock %}
