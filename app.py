@@ -95,9 +95,12 @@ def get_meanings(word):
         response = requests.get(f"https://jisho.org/search/{word}", headers=headers)
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        representations = soup.select('div.exact_block div.concept_light.clearfix')
+        # Get all concept blocks (not just exact_block)
+        representations = soup.select('div.concept_light.clearfix')
         
-        for representation in representations[:5]:  # Limit to 5 results
+        print(f"🔍 Encontrados {len(representations)} resultados para '{word}' no Jisho.org")
+        
+        for i, representation in enumerate(representations[:10]):  # Increased to 10 results
             furigana_node = representation.select_one('span.furigana')
             kanji_node = representation.select_one('span.text')
             meaning_node = representation.select_one('span.meaning-meaning')
@@ -111,6 +114,12 @@ def get_meanings(word):
             if level_node and "JLPT" in level_node.get_text():
                 level = level_node.get_text(strip=True)
             
+            # Skip if no meaning found
+            if not meaning:
+                continue
+                
+            print(f"  📝 Resultado {i+1}: {furigana} | {kanji} | {meaning}")
+            
             try:
                 translated = translate_to_portuguese(meaning)
                 final_meaning = f"{meaning}/{translated}"
@@ -120,8 +129,9 @@ def get_meanings(word):
             meanings.append(Meaning(word, furigana, level, kanji, final_meaning))
     
     except Exception as e:
-        print(f"Error scraping meanings: {e}")
+        print(f"❌ Erro ao buscar significados: {e}")
     
+    print(f"✅ Total de {len(meanings)} significados processados para '{word}'")
     return meanings
 
 def translate_to_portuguese(text):
@@ -547,7 +557,9 @@ def check_word():
 @app.route('/api/get-meanings', methods=['POST'])
 def api_get_meanings():
     word = request.json.get('word', '')
-    meanings = get_meanings(word)
+    load_more = request.json.get('load_more', False)
+    
+    meanings = get_meanings_extended(word, limit=15 if load_more else 10)
     
     meanings_data = []
     for i, meaning in enumerate(meanings):
@@ -560,7 +572,71 @@ def api_get_meanings():
             'text': meaning.text
         })
     
-    return jsonify({'meanings': meanings_data})
+    return jsonify({
+        'meanings': meanings_data,
+        'has_more': len(meanings) >= (10 if not load_more else 15)
+    })
+
+def get_meanings_extended(word, limit=10):
+    """Extended scraping with more results"""
+    headers = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
+    }
+    
+    meanings = []
+    try:
+        response = requests.get(f"https://jisho.org/search/{word}", headers=headers)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Get all concept blocks from the main results area
+        representations = soup.select('div.concept_light.clearfix')
+        
+        print(f"🔍 Encontrados {len(representations)} resultados para '{word}' no Jisho.org")
+        
+        for i, representation in enumerate(representations[:limit]):
+            furigana_node = representation.select_one('span.furigana')
+            kanji_node = representation.select_one('span.text')
+            
+            # Try multiple selectors for meanings
+            meaning_node = (representation.select_one('span.meaning-meaning') or 
+                          representation.select_one('.meaning-wrapper .meaning-meaning') or
+                          representation.select_one('.meanings-wrapper .meaning-meaning'))
+            
+            level_nodes = representation.select('span.concept_light-tag.label')
+            
+            furigana = furigana_node.get_text(strip=True) if furigana_node else ""
+            kanji = kanji_node.get_text(strip=True) if kanji_node else ""
+            meaning = meaning_node.get_text(strip=True) if meaning_node else ""
+            level = "JLPT N0"
+            
+            # Check all level nodes for JLPT
+            for level_node in level_nodes:
+                level_text = level_node.get_text(strip=True)
+                if "JLPT" in level_text:
+                    level = level_text
+                    break
+            
+            # Skip if no meaning found
+            if not meaning:
+                print(f"  ⚠️  Pulando resultado {i+1}: sem significado")
+                continue
+                
+            print(f"  📝 Resultado {i+1}: {furigana} | {kanji} | {meaning[:50]}...")
+            
+            try:
+                translated = translate_to_portuguese(meaning)
+                final_meaning = f"{meaning}/{translated}"
+            except:
+                final_meaning = meaning
+            
+            meanings.append(Meaning(word, furigana, level, kanji, final_meaning))
+    
+    except Exception as e:
+        print(f"❌ Erro ao buscar significados: {e}")
+    
+    print(f"✅ Total de {len(meanings)} significados processados para '{word}'")
+    return meanings
 
 @app.route('/api/save-word', methods=['POST'])
 def save_word():

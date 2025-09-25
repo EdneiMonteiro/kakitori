@@ -28,6 +28,13 @@
         <h3>Selecione o significado correto:</h3>
         <div id="meaningsList"></div>
         
+        <div style="text-align: center; margin: 15px 0;">
+            <button id="loadMoreBtn" class="btn btn-secondary" style="display: none;">📋 Carregar Mais Resultados</button>
+            <small style="display: block; color: #666; margin-top: 10px;">
+                Não encontrou o significado? Tente carregar mais resultados ou use tradução personalizada.
+            </small>
+        </div>
+        
         <div class="form-group">
             <label>
                 <input type="checkbox" id="useKanji"> Usar kanji para áudio (se disponível)
@@ -76,6 +83,9 @@ $(document).ready(function() {
             return;
         }
         
+        // Reset previous results
+        resetFormPartial();
+        
         // Check if word already exists
         $.ajax({
             url: '/api/check-word',
@@ -93,6 +103,11 @@ $(document).ready(function() {
                 $('#result').html('<div class="alert alert-error">Erro ao verificar palavra</div>').show();
             }
         });
+    });
+    
+    $('#loadMoreBtn').click(function() {
+        const word = $('#word').val().trim();
+        loadMoreMeanings(word);
     });
     
     $('#saveBtn').click(function() {
@@ -121,9 +136,9 @@ $(document).ready(function() {
             success: function(response) {
                 $('#audioGeneration').hide();
                 $('#result').html('<div class="alert alert-success">Palavra adicionada com sucesso!</div>').show();
-                $('#meanings').hide();
-                $('#word').val('');
-                selectedMeaning = null;
+                
+                // Reset all form fields and variables
+                resetForm();
             },
             error: function(xhr) {
                 $('#audioGeneration').hide();
@@ -135,7 +150,7 @@ $(document).ready(function() {
     });
 });
 
-function searchMeanings(word) {
+function searchMeanings(word, loadMore = false) {
     $('#loading').show();
     $('#meanings').hide();
     $('#result').hide();
@@ -144,7 +159,10 @@ function searchMeanings(word) {
         url: '/api/get-meanings',
         method: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({word: word}),
+        data: JSON.stringify({
+            word: word,
+            load_more: loadMore
+        }),
         success: function(response) {
             $('#loading').hide();
             meanings = response.meanings;
@@ -155,12 +173,24 @@ function searchMeanings(word) {
             }
             
             displayMeanings(meanings);
+            
+            // Show/hide load more button
+            if (response.has_more && !loadMore) {
+                $('#loadMoreBtn').show();
+            } else {
+                $('#loadMoreBtn').hide();
+            }
         },
         error: function() {
             $('#loading').hide();
             $('#result').html('<div class="alert alert-error">Erro ao buscar significados</div>').show();
         }
     });
+}
+
+function loadMoreMeanings(word) {
+    $('#loadMoreBtn').prop('disabled', true).text('🔄 Carregando...');
+    searchMeanings(word, true);
 }
 
 function displayMeanings(meanings) {
@@ -187,6 +217,51 @@ function displayMeanings(meanings) {
     });
     
     $('#meanings').show();
+}
+
+function resetForm() {
+    // Reset form fields
+    $('#word').val('');
+    $('#customTranslation').val('');
+    $('#useKanji').prop('checked', false);
+    
+    // Reset variables
+    selectedMeaning = null;
+    meanings = [];
+    
+    // Hide sections
+    $('#meanings').hide();
+    $('#saveBtn').hide().prop('disabled', false);
+    $('#audioGeneration').hide();
+    $('#result').hide();
+    
+    // Clear meaning options click handlers
+    $('.meaning-option').off('click');
+    
+    // Enable save button and reset text
+    $('#saveBtn').text('💾 Salvar Palavra');
+}
+
+function resetFormPartial() {
+    // Reset only search results, keep the word input
+    $('#customTranslation').val('');
+    $('#useKanji').prop('checked', false);
+    
+    // Reset variables
+    selectedMeaning = null;
+    meanings = [];
+    
+    // Hide sections
+    $('#meanings').hide();
+    $('#saveBtn').hide().prop('disabled', false);
+    $('#audioGeneration').hide();
+    $('#result').hide();
+    
+    // Clear meaning options click handlers
+    $('.meaning-option').off('click');
+    
+    // Enable save button and reset text
+    $('#saveBtn').text('💾 Salvar Palavra');
 }
 </script>
 {% endblock %}
