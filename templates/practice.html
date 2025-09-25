@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+
+{% block title %}Praticar - Nihongo{% endblock %}
+
+{% block japanese_title %}かきとり{% endblock %}
+
+{% block content %}
+<div class="card" id="setupCard">
+    <h2 style="text-align: center; margin-bottom: 30px; color: #333;">Configurar Sessão de Prática</h2>
+    
+    <div class="form-group">
+        <label for="sessionId">Sessão (opcional):</label>
+        <input type="number" id="sessionId" placeholder="ID da sessão específica">
+        <small style="color: #666;">Deixe em branco para palavras aleatórias</small>
+    </div>
+    
+    <div class="form-group" id="wordCountGroup">
+        <label for="wordCount">Quantidade de palavras:</label>
+        <input type="number" id="wordCount" value="5" min="1" max="20">
+    </div>
+    
+    <div class="form-group">
+        <label for="interval">Intervalo entre áudios (segundos):</label>
+        <input type="number" id="interval" value="5" min="1" max="10">
+    </div>
+    
+    <div style="text-align: center;">
+        <button id="startBtn" class="btn btn-success">🎯 Começar Prática</button>
+    </div>
+</div>
+
+<div class="card" id="practiceCard" style="display: none;">
+    <div id="sessionInfo" class="alert alert-info" style="text-align: center;">
+        <strong>Sessão carregada!</strong><br>
+        <span id="sessionDetails"></span>
+    </div>
+    
+    <div class="progress-bar">
+        <div id="progressFill" class="progress-fill" style="width: 0%;"></div>
+    </div>
+    
+    <div style="text-align: center; margin-bottom: 20px;">
+        <span id="currentWord">Palavra <span id="wordNumber">1</span> de <span id="totalWords">5</span></span>
+    </div>
+    
+    <div class="audio-controls">
+        <button id="playAudio" class="btn audio-btn">🔊 Reproduzir Áudio</button>
+        <div style="margin-top: 10px;">
+            <small style="color: #666;">O áudio será reproduzido automaticamente</small>
+        </div>
+    </div>
+    
+    <div id="wordDisplay" style="display: none;">
+        <div class="japanese-text" id="wordText"></div>
+        <div class="japanese-text" id="meaningText" style="font-size: 1.2em; background: #f0fff0;"></div>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <h4>Como você se saiu?</h4>
+            <div style="margin: 20px 0;">
+                <label style="display: block; margin: 10px 0;">
+                    <strong>Você acertou a palavra?</strong><br>
+                    <button id="wordCorrect" class="btn btn-success" style="margin: 5px;">✅ Sim</button>
+                    <button id="wordIncorrect" class="btn btn-danger" style="margin: 5px;">❌ Não</button>
+                </label>
+            </div>
+            <div style="margin: 20px 0;">
+                <label style="display: block; margin: 10px 0;">
+                    <strong>Você acertou a tradução?</strong><br>
+                    <button id="meaningCorrect" class="btn btn-success" style="margin: 5px;">✅ Sim</button>
+                    <button id="meaningIncorrect" class="btn btn-danger" style="margin: 5px;">❌ Não</button>
+                </label>
+            </div>
+            
+            <div id="answerButtons" style="display: none;">
+                <button id="nextBtn" class="btn">➡️ Próxima Palavra</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card" id="resultsCard" style="display: none;">
+    <h2 style="text-align: center; margin-bottom: 30px; color: #333;">Resultados da Sessão</h2>
+    
+    <div id="scoreDisplay" class="japanese-text" style="font-size: 1.5em; text-align: center;"></div>
+    
+    <div style="text-align: center; margin-top: 20px;">
+        <button id="repeatBtn" class="btn btn-secondary">🔄 Repetir Sessão</button>
+        <button id="errorsOnlyBtn" class="btn btn-danger" style="display: none;">❌ Apenas Erros</button>
+        <button id="newSessionBtn" class="btn">🆕 Nova Sessão</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentSession = null;
+let words = [];
+let currentWordIndex = 0;
+let interval = 5;
+let wordAnswer = null;
+let meaningAnswer = null;
+
+$(document).ready(function() {
+    $('#sessionId').on('input', function() {
+        const hasSessionId = $(this).val().trim() !== '';
+        $('#wordCountGroup').toggle(!hasSessionId);
+    });
+    
+    $('#startBtn').click(function() {
+        const sessionId = $('#sessionId').val().trim();
+        const wordCount = parseInt($('#wordCount').val()) || 5;
+        interval = parseInt($('#interval').val()) || 5;
+        
+        startPractice(sessionId || null, wordCount);
+    });
+    
+    $('#playAudio').click(function() {
+        playCurrentAudio();
+    });
+    
+    $('#wordCorrect').click(function() {
+        wordAnswer = true;
+        checkAnswersComplete();
+    });
+    
+    $('#wordIncorrect').click(function() {
+        wordAnswer = false;
+        checkAnswersComplete();
+    });
+    
+    $('#meaningCorrect').click(function() {
+        meaningAnswer = true;
+        checkAnswersComplete();
+    });
+    
+    $('#meaningIncorrect').click(function() {
+        meaningAnswer = false;
+        checkAnswersComplete();
+    });
+    
+    $('#nextBtn').click(function() {
+        nextWord();
+    });
+    
+    $('#repeatBtn').click(function() {
+        repeatSession(false);
+    });
+    
+    $('#errorsOnlyBtn').click(function() {
+        repeatSession(true);
+    });
+    
+    $('#newSessionBtn').click(function() {
+        resetToSetup();
+    });
+});
+
+function startPractice(sessionId, wordCount) {
+    $('#startBtn').prop('disabled', true).text('Carregando...');
+    
+    $.ajax({
+        url: '/api/start-practice',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            session_id: sessionId,
+            word_count: wordCount
+        }),
+        success: function(response) {
+            currentSession = response.session_id;
+            words = response.words;
+            currentWordIndex = 0;
+            
+            $('#setupCard').hide();
+            $('#practiceCard').show();
+            $('#sessionDetails').text(`Sessão ${currentSession} com ${words.length} palavras`);
+            $('#totalWords').text(words.length);
+            
+            startCurrentWord();
+        },
+        error: function(xhr) {
+            $('#startBtn').prop('disabled', false).text('🎯 Começar Prática');
+            const error = xhr.responseJSON ? xhr.responseJSON.error : 'Erro desconhecido';
+            alert(`Erro ao iniciar prática: ${error}`);
+        }
+    });
+}
+
+function startCurrentWord() {
+    if (currentWordIndex >= words.length) {
+        finishSession();
+        return;
+    }
+    
+    const word = words[currentWordIndex];
+    wordAnswer = null;
+    meaningAnswer = null;
+    
+    // Update progress
+    const progress = ((currentWordIndex + 1) / words.length) * 100;
+    $('#progressFill').css('width', progress + '%');
+    $('#wordNumber').text(currentWordIndex + 1);
+    
+    // Hide word display initially
+    $('#wordDisplay').hide();
+    
+    // Play audio sequence
+    playAudioSequence(word.id);
+}
+
+function playAudioSequence(wordId) {
+    // Play audio2, wait, play audio3, wait, play audio3 again, then show word
+    playAudio(wordId, 2, function() {
+        setTimeout(function() {
+            playAudio(wordId, 3, function() {
+                setTimeout(function() {
+                    playAudio(wordId, 3, function() {
+                        showWordDisplay();
+                    });
+                }, interval * 1000);
+            });
+        }, interval * 1000);
+    });
+}
+
+function playAudio(wordId, audioNum, callback) {
+    const audio = new Audio(`/api/audio/${wordId}/${audioNum}`);
+    
+    audio.onerror = function() {
+        console.log(`❌ Erro ao reproduzir áudio ${audioNum} para palavra ID ${wordId}`);
+        if (callback) callback();
+    };
+    
+    audio.onloadstart = function() {
+        console.log(`🔊 Carregando áudio ${audioNum} para palavra ID ${wordId}`);
+    };
+    
+    audio.oncanplay = function() {
+        console.log(`✅ Reproduzindo áudio ${audioNum} para palavra ID ${wordId}`);
+        audio.play().catch(function(error) {
+            console.log(`❌ Erro na reprodução: ${error}`);
+            if (callback) callback();
+        });
+    };
+    
+    if (callback) {
+        audio.onended = callback;
+    }
+}
+
+function playCurrentAudio() {
+    const word = words[currentWordIndex];
+    playAudio(word.id, 3);
+}
+
+function showWordDisplay() {
+    const word = words[currentWordIndex];
+    $('#wordText').text(word.word);
+    $('#meaningText').text(word.meaning);
+    $('#wordDisplay').show();
+}
+
+function checkAnswersComplete() {
+    if (wordAnswer !== null && meaningAnswer !== null) {
+        // Submit attempt
+        const word = words[currentWordIndex];
+        $.ajax({
+            url: '/api/submit-attempt',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                session_id: currentSession,
+                word_id: word.id,
+                writing_correct: wordAnswer,
+                meaning_correct: meaningAnswer
+            }),
+            success: function() {
+                $('#answerButtons').show();
+            }
+        });
+    }
+}
+
+function nextWord() {
+    currentWordIndex++;
+    startCurrentWord();
+}
+
+function finishSession() {
+    $('#practiceCard').hide();
+    
+    // Get session score
+    $.ajax({
+        url: `/api/session-score/${currentSession}`,
+        method: 'GET',
+        success: function(response) {
+            $('#scoreDisplay').html(`
+                <strong>Pontuação Final</strong><br>
+                ${response.score} / 10
+            `);
+            
+            if (response.score < 10) {
+                $('#errorsOnlyBtn').show();
+            }
+            
+            $('#resultsCard').show();
+        }
+    });
+}
+
+function repeatSession(errorsOnly) {
+    const sessionId = currentSession;
+    const wordCount = words.length;
+    
+    $('#resultsCard').hide();
+    startPractice(sessionId, wordCount);
+}
+
+function resetToSetup() {
+    $('#resultsCard').hide();
+    $('#practiceCard').hide();
+    $('#setupCard').show();
+    $('#startBtn').prop('disabled', false).text('🎯 Começar Prática');
+    $('#sessionId').val('');
+    $('#wordCount').val(5);
+    $('#wordCountGroup').show();
+    currentSession = null;
+    words = [];
+    currentWordIndex = 0;
+}
+</script>
+{% endblock %}

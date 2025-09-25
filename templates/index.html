@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Nihongo - Kakitori{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2 style="text-align: center; margin-bottom: 30px; color: #333;">Bem-vindo ao Sistema de Aprendizado de Japonês</h2>
+    
+    <div style="text-align: center;">
+        <p style="font-size: 18px; color: #666; margin-bottom: 40px;">
+            Escolha uma das opções abaixo para começar sua jornada de aprendizado:
+        </p>
+        
+        <div style="display: grid; gap: 20px; max-width: 400px; margin: 0 auto;">
+            <a href="/add-word" class="btn" style="padding: 20px; font-size: 18px;">
+                <strong>📝 Adicionar Palavra</strong><br>
+                <small>Cadastre novas palavras japonesas</small>
+            </a>
+            
+            <a href="/practice" class="btn btn-success" style="padding: 20px; font-size: 18px;">
+                <strong>🎯 Praticar - かきとり</strong><br>
+                <small>Pratique suas palavras cadastradas</small>
+            </a>
+            
+            <button class="btn btn-secondary" style="padding: 20px; font-size: 18px;" disabled>
+                <strong>🗑️ Gerenciar Palavras</strong><br>
+                <small>Em breve...</small>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="text-align: center; margin-bottom: 20px;">Como usar:</h3>
+    <div style="display: grid; gap: 15px;">
+        <div style="padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <strong>1. Adicionar Palavras:</strong> Digite uma palavra em japonês e o sistema buscará automaticamente suas traduções e pronúncias.
+        </div>
+        <div style="padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <strong>2. Praticar:</strong> Ouça as palavras e tente escrever/traduzir. O sistema gerará áudios com diferentes vozes japonesas.
+        </div>
+        <div style="padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <strong>3. Acompanhar Progresso:</strong> Veja sua pontuação e pratique palavras que você errou.
+        </div>
+    </div>
+</div>
+{% endblock %}

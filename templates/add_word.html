@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Adicionar Palavra - Nihongo{% endblock %}
+
+{% block japanese_title %}新しい言葉{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2 style="text-align: center; margin-bottom: 30px; color: #333;">Adicionar Nova Palavra</h2>
+    
+    <div class="form-group">
+        <label for="word">Palavra em Japonês:</label>
+        <input type="text" id="word" placeholder="Digite a palavra (hiragana, katakana ou kanji)">
+    </div>
+    
+    <div style="text-align: center;">
+        <button id="searchBtn" class="btn">🔍 Buscar Significados</button>
+    </div>
+    
+    <div id="loading" class="loading" style="display: none;">
+        <p>Buscando significados...</p>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: 0%; animation: loading 2s infinite;"></div>
+        </div>
+    </div>
+    
+    <div id="meanings" style="display: none;">
+        <h3>Selecione o significado correto:</h3>
+        <div id="meaningsList"></div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="useKanji"> Usar kanji para áudio (se disponível)
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="customTranslation">Tradução personalizada (opcional):</label>
+            <input type="text" id="customTranslation" placeholder="Digite uma tradução personalizada">
+        </div>
+        
+        <div id="audioGeneration" style="display: none;">
+            <div class="alert alert-info">
+                <strong>Gerando áudios...</strong><br>
+                Criando pronúncias com diferentes vozes japonesas.
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <button id="saveBtn" class="btn btn-success" style="display: none;">💾 Salvar Palavra</button>
+        </div>
+    </div>
+    
+    <div id="result" style="display: none;"></div>
+</div>
+
+<style>
+@keyframes loading {
+    0% { width: 0%; }
+    50% { width: 70%; }
+    100% { width: 100%; }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedMeaning = null;
+let meanings = [];
+
+$(document).ready(function() {
+    $('#searchBtn').click(function() {
+        const word = $('#word').val().trim();
+        if (!word) {
+            alert('Por favor, digite uma palavra');
+            return;
+        }
+        
+        // Check if word already exists
+        $.ajax({
+            url: '/api/check-word',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({word: word}),
+            success: function(response) {
+                if (response.exists) {
+                    $('#result').html('<div class="alert alert-error">Palavra já cadastrada!</div>').show();
+                    return;
+                }
+                searchMeanings(word);
+            },
+            error: function() {
+                $('#result').html('<div class="alert alert-error">Erro ao verificar palavra</div>').show();
+            }
+        });
+    });
+    
+    $('#saveBtn').click(function() {
+        if (selectedMeaning === null) {
+            alert('Por favor, selecione um significado');
+            return;
+        }
+        
+        const word = $('#word').val().trim();
+        const useKanji = $('#useKanji').is(':checked');
+        const customTranslation = $('#customTranslation').val().trim();
+        
+        $('#audioGeneration').show();
+        $('#saveBtn').prop('disabled', true);
+        
+        $.ajax({
+            url: '/api/save-word',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                word: word,
+                meaning_index: selectedMeaning,
+                use_kanji: useKanji,
+                custom_translation: customTranslation
+            }),
+            success: function(response) {
+                $('#audioGeneration').hide();
+                $('#result').html('<div class="alert alert-success">Palavra adicionada com sucesso!</div>').show();
+                $('#meanings').hide();
+                $('#word').val('');
+                selectedMeaning = null;
+            },
+            error: function(xhr) {
+                $('#audioGeneration').hide();
+                $('#saveBtn').prop('disabled', false);
+                const error = xhr.responseJSON ? xhr.responseJSON.error : 'Erro desconhecido';
+                $('#result').html(`<div class="alert alert-error">Erro ao salvar: ${error}</div>`).show();
+            }
+        });
+    });
+});
+
+function searchMeanings(word) {
+    $('#loading').show();
+    $('#meanings').hide();
+    $('#result').hide();
+    
+    $.ajax({
+        url: '/api/get-meanings',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({word: word}),
+        success: function(response) {
+            $('#loading').hide();
+            meanings = response.meanings;
+            
+            if (meanings.length === 0) {
+                $('#result').html('<div class="alert alert-error">Nenhum significado encontrado</div>').show();
+                return;
+            }
+            
+            displayMeanings(meanings);
+        },
+        error: function() {
+            $('#loading').hide();
+            $('#result').html('<div class="alert alert-error">Erro ao buscar significados</div>').show();
+        }
+    });
+}
+
+function displayMeanings(meanings) {
+    const meaningsList = $('#meaningsList');
+    meaningsList.empty();
+    
+    meanings.forEach(function(meaning, index) {
+        const meaningHtml = `
+            <div class="meaning-option" data-index="${index}">
+                <strong>${meaning.level}</strong> | 
+                <span style="font-size: 1.2em;">${meaning.furigana}</span> | 
+                <span style="font-size: 1.2em;">${meaning.kanji}</span><br>
+                <span style="color: #666;">${meaning.text}</span>
+            </div>
+        `;
+        meaningsList.append(meaningHtml);
+    });
+    
+    $('.meaning-option').click(function() {
+        $('.meaning-option').removeClass('selected');
+        $(this).addClass('selected');
+        selectedMeaning = parseInt($(this).data('index'));
+        $('#saveBtn').show();
+    });
+    
+    $('#meanings').show();
+}
+</script>
+{% endblock %}
